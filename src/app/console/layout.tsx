@@ -2,7 +2,7 @@ import { Navigation } from "~/components/navigation";
 
 const navItems = [
 	{ label: "Home", href: "/console" },
-	{ label: "About", href: "/console/about" },
+	{ label: "Settings", href: "/console/settings" },
 ];
 
 export default function ConsoleLayout({
