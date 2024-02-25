@@ -8,8 +8,10 @@
  */
 
 import { initTRPC, TRPCError } from "@trpc/server";
+import { readFileSync } from "fs";
 import superjson from "superjson";
 import { ZodError } from "zod";
+import { env } from "~/env";
 
 import { getServerAuthSession } from "~/server/auth";
 import { db } from "~/server/db";
@@ -29,9 +31,16 @@ import { db } from "~/server/db";
 export const createTRPCContext = async (opts: { headers: Headers }) => {
   const session = await getServerAuthSession();
 
+  const cert = readFileSync(env.TELLER_CERTIFICATE).toString();
+  const key = readFileSync(env.TELLER_PRIVATE_KEY).toString();
+
   return {
     db,
     session,
+    teller: {
+      cert,
+      key,
+    },
     ...opts,
   };
 };
