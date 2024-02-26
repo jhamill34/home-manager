@@ -1,33 +1,9 @@
-import { eq } from "drizzle-orm";
+import { desc, eq, sql } from "drizzle-orm";
 import { createTRPCRouter, protectedProcedure } from "../trpc";
-import { banks } from "~/server/db/schema";
+import { bankAccounts, banks, transactions } from "~/server/db/schema";
 import { z } from "zod";
-import { get } from "https";
-import { env } from "~/env";
-
-const tellerAccountResponse = z.object({
-  enrollment_id: z.string(),
-  links: z.object({
-    balances: z.string(),
-    self: z.string(),
-    transactions: z.string(),
-  }),
-  institution: z.object({
-    name: z.string(),
-    id: z.string(),
-  }),
-  type: z.string(),
-  name: z.string(),
-  subtype: z.string(),
-  currency: z.string(),
-  id: z.string(),
-  last_four: z.string(),
-  status: z.string(),
-});
-
-const tellerAccountResponseArray = z.array(tellerAccountResponse);
-
-export type TellerAccountResponse = z.infer<typeof tellerAccountResponse>;
+import { on } from "events";
+import { ListTransactionsOpts } from "~/server/teller/client";
 
 export const bankRouter = createTRPCRouter({
 	get: protectedProcedure
@@ -53,10 +29,17 @@ export const bankRouter = createTRPCRouter({
         institutionName: input.institutionName,
       })
     }),
-  syncAccounts: protectedProcedure
+  listAccounts: protectedProcedure
     .query(async ({ ctx }) => {
-      // TODO: mTLS with certs and key
-      // TODO: Add basic auth (i.e., base64(access_token:))
+      return ctx.db.query.banks.findFirst({
+        where: eq(banks.userId, ctx.session.user.id),
+        with: {
+          accounts: true,
+        }
+      })
+    }),
+  syncAccounts: protectedProcedure
+    .mutation(async ({ ctx }) => {
       const bank = await ctx.db.query.banks.findFirst({
         where: eq(banks.userId, ctx.session.user.id)
       });
@@ -65,32 +48,106 @@ export const bankRouter = createTRPCRouter({
         throw new Error('Bank not found');
       }
 
-      const authorization = Buffer.from(`${bank.accessToken}:`).toString('base64');
+      const accounts = await ctx.tellerClient.listAccounts(bank.accessToken);
 
-      const result = await new Promise<TellerAccountResponse[]>((resolve, reject) => {
-        const req = get({
-          hostname: env.TELLER_BASE_URL,
-          port: 443, 
-          method: 'GET',
-          path: '/accounts',
-          cert: ctx.teller.cert,
-          key: ctx.teller.key,
-          headers: {
-            'Authorization': `Basic ${authorization}`
-          }
-        }, (res) => {
-          res.on('data', (data: Buffer) => {
-            resolve(tellerAccountResponseArray.parse(JSON.parse(data.toString())));
-          });
+      return ctx.db.insert(bankAccounts).values(accounts.map(account => ({
+        id: account.id, 
+        bankId: bank.id,
+        type: account.type,
+        name: account.name,
+        subType: account.subtype,
+        currency: account.currency,
+        lastFour: account.last_four,
+        status: account.status,
+      })))
+    }),
 
-          res.on('error', (error) => {
-            reject(error)
-          });
-        });
+  listTransactions: protectedProcedure
+    .input(z.object({
+      accountId: z.string(),
+      limit: z.number().optional(),
+      offset: z.number().optional(),
+    }))
+    .query(async ({ ctx, input }) => {
+      return ctx.db.query.transactions.findMany({
+        limit: input.limit,
+        offset: input.offset,
+        where: eq(transactions.bankAccountId, input.accountId),
+        orderBy: [desc(transactions.date)]
+      })
+    }),
 
-        req.end();
+  syncTransactions: protectedProcedure
+    .input(z.object({
+      accountId: z.string(),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const bank = await ctx.db.query.banks.findFirst({
+        where: eq(banks.userId, ctx.session.user.id)
       });
 
-      return result; 
+      if (!bank) {
+        throw new Error('Bank not found');
+      }
+
+      const mostRecentTransaction = await ctx.db.query.transactions.findFirst({
+        where: eq(transactions.bankAccountId, input.accountId),
+        orderBy: [desc(transactions.date)]
+      });
+
+      if (mostRecentTransaction) {
+        let hasMore = true;
+        const options: ListTransactionsOpts = {
+          count: '100',
+        } 
+
+        while(hasMore) {
+          const remoteTransactions = await ctx.tellerClient.listTransactions(bank.accessToken, input.accountId, options);
+
+          const newTransactions = []
+          for (const transaction of remoteTransactions) {
+            const d = new Date(transaction.date);
+            if (d < mostRecentTransaction.date) {
+              hasMore = false;
+              break;
+            }
+
+            newTransactions.push(transaction);
+            options.from_id = transaction.id;
+          }
+
+
+          // insert new transactions
+          await ctx.db.insert(transactions).values(newTransactions.map(transaction => ({
+            id: transaction.id,
+            bankAccountId: transaction.account_id,
+            description: transaction.description,
+            amount: parseFloat(transaction.amount),
+            date: new Date(transaction.date),
+            type: transaction.type,
+            status: transaction.status,
+            category: transaction.details.category ?? 'unknown',
+            counterParty: transaction.details.counterparty?.name ?? 'unknown',
+            counterPartyType: transaction.details.counterparty?.type ?? 'unknown',
+          }))).onDuplicateKeyUpdate({ set: { id: sql`id` }});
+        }
+      } else {
+        const remoteTransactions = await ctx.tellerClient.listTransactions(bank.accessToken, input.accountId, {
+          count: '2000',
+        });
+
+        await ctx.db.insert(transactions).values(remoteTransactions.map(transaction => ({
+          id: transaction.id,
+          bankAccountId: transaction.account_id,
+          description: transaction.description,
+          amount: parseFloat(transaction.amount),
+          date: new Date(transaction.date),
+          type: transaction.type,
+          status: transaction.status,
+          category: transaction.details.category ?? 'unknown',
+          counterParty: transaction.details.counterparty?.name ?? 'unknown',
+          counterPartyType: transaction.details.counterparty?.type ?? 'unknown',
+        })));
+      }
     }),
 });

@@ -1,12 +1,14 @@
-import { api } from "~/trpc/server"
+import { AccountList } from "~/components/account-list";
+import { AccountSync } from "~/components/account-sync";
 
-export default function ConsolePage() {
-  const a = api.bank.syncAccounts.query();
-
-  console.log(a);
+export default async function ConsolePage() {
 	return (
-		<div>
-			Hello console!
-		</div>
+    <div>
+      <div className="mb-4 flex gap-2">
+        <AccountSync />
+      </div>
+
+      <AccountList />
+    </div>
 	)
 }

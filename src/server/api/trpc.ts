@@ -15,6 +15,7 @@ import { env } from "~/env";
 
 import { getServerAuthSession } from "~/server/auth";
 import { db } from "~/server/db";
+import { TellerClient } from "../teller/client";
 
 /**
  * 1. CONTEXT
@@ -34,13 +35,17 @@ export const createTRPCContext = async (opts: { headers: Headers }) => {
   const cert = readFileSync(env.TELLER_CERTIFICATE).toString();
   const key = readFileSync(env.TELLER_PRIVATE_KEY).toString();
 
+  const tellerClient = new TellerClient({
+    host: env.TELLER_BASE_URL,
+    port: 443,
+    cert,
+    key,
+  });
+
   return {
     db,
     session,
-    teller: {
-      cert,
-      key,
-    },
+    tellerClient,
     ...opts,
   };
 };
