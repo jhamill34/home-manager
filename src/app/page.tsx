@@ -8,9 +8,8 @@ export default async function Home() {
   const session = await getServerAuthSession();
 
   if (!session || !session.user) {
-	  redirect("/api/auth/signin");
+    redirect("/api/auth/signin");
   } else {
-	  redirect("/console");
+    redirect("/console");
   }
 }
-

@@ -23,7 +23,7 @@ export function AccountList() {
     <>
       <ul className="divide-y divide-gray-800 border border-gray-800">
         {data.accounts.map((account) => (
-          <li key={account.id} className="flex items-center p-4 gap-2">
+          <li key={account.id} className="flex items-center gap-2 p-4">
             <div className="flex-1">{account.name}</div>
 
             <Button onClick={() => setSelectedAccountId(account.id)}>
@@ -33,7 +33,9 @@ export function AccountList() {
           </li>
         ))}
       </ul>
-      {selectedAccountId !== null && <TransactionList accountId={selectedAccountId} />}
+      {selectedAccountId !== null && (
+        <TransactionList accountId={selectedAccountId} />
+      )}
     </>
   );
 }
@@ -57,7 +59,8 @@ function TransactionList({ accountId }: { accountId: string }) {
       {data.map((transaction) => (
         <li key={transaction.id} className="flex items-center p-4">
           <div className="flex-1">
-            {transaction.date.toLocaleDateString()} {transaction.description} - {transaction.amount}
+            {transaction.date.toLocaleDateString()} {transaction.description} -{" "}
+            {transaction.amount}
           </div>
         </li>
       ))}

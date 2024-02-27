@@ -10,7 +10,9 @@ export default async function SettingsPage() {
 
   return (
     <div>
-      <h1 className="text-2xl font-semibold border-b border-muted pb-4">Settings</h1>
+      <h1 className="border-b border-muted pb-4 text-2xl font-semibold">
+        Settings
+      </h1>
       <BankItem bank={banks} />
     </div>
   );
@@ -23,7 +25,8 @@ function BankItem({ bank }: { bank: BankEntity }) {
 
   return (
     <div className="p-4">
-      Connected to <span className="font-semibold text-primary">{bank.institutionName}</span>
+      Connected to{" "}
+      <span className="font-semibold text-primary">{bank.institutionName}</span>
     </div>
   );
 }

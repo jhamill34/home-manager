@@ -6,31 +6,31 @@ import { TRPCReactProvider } from "~/trpc/react";
 import { ThemeProvider } from "~/components/theme-provider";
 
 const inter = Inter({
-	subsets: ["latin"],
-	variable: "--font-sans",
+  subsets: ["latin"],
+  variable: "--font-sans",
 });
 
 export const metadata = {
-	title: "Home manager",
-	icons: [{ rel: "icon", url: "/favicon.ico" }],
+  title: "Home manager",
+  icons: [{ rel: "icon", url: "/favicon.ico" }],
 };
 
 export default function RootLayout({
-	children,
+  children,
 }: {
-	children: React.ReactNode;
+  children: React.ReactNode;
 }) {
-	return (
-		<html lang="en">
-			<body className={`font-sans ${inter.variable}`}>
-				<ThemeProvider
-					attribute="class"
-					defaultTheme="dark"
-					disableTransitionOnChange
-				>
-					<TRPCReactProvider>{children}</TRPCReactProvider>
-				</ThemeProvider>	
-			</body>
-		</html>
-	);
+  return (
+    <html lang="en">
+      <body className={`font-sans ${inter.variable}`}>
+        <ThemeProvider
+          attribute="class"
+          defaultTheme="dark"
+          disableTransitionOnChange
+        >
+          <TRPCReactProvider>{children}</TRPCReactProvider>
+        </ThemeProvider>
+      </body>
+    </html>
+  );
 }
