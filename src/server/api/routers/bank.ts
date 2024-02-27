@@ -1,8 +1,14 @@
-import { desc, eq, sql } from "drizzle-orm";
+import { type InferInsertModel, desc, eq, sql } from "drizzle-orm";
 import { createTRPCRouter, protectedProcedure } from "../trpc";
-import { bankAccounts, banks, transactions } from "~/server/db/schema";
+import {
+  bankAccounts,
+  banks,
+  counterparty,
+  transactions,
+} from "~/server/db/schema";
 import { z } from "zod";
 import { type ListTransactionsOpts } from "~/server/teller/client";
+import { randomUUID } from "crypto";
 
 export const bankRouter = createTRPCRouter({
   get: protectedProcedure.query(({ ctx }) => {
@@ -51,6 +57,7 @@ export const bankRouter = createTRPCRouter({
     return ctx.db.insert(bankAccounts).values(
       accounts.map((account) => ({
         id: account.id,
+        userId: ctx.session.user.id,
         bankId: bank.id,
         type: account.type,
         name: account.name,
@@ -76,6 +83,9 @@ export const bankRouter = createTRPCRouter({
         offset: input.offset,
         where: eq(transactions.bankAccountId, input.accountId),
         orderBy: [desc(transactions.date)],
+        with: {
+          counterparty: true,
+        },
       });
     }),
 
@@ -99,6 +109,18 @@ export const bankRouter = createTRPCRouter({
         orderBy: [desc(transactions.date)],
       });
 
+      const allCounterParties = await ctx.db.query.counterparty.findMany({
+        where: eq(counterparty.userId, ctx.session.user.id),
+      });
+
+      const counterPartyLookup: Record<
+        string,
+        InferInsertModel<typeof counterparty>
+      > = {};
+      for (const cp of allCounterParties) {
+        counterPartyLookup[cp.name] = cp;
+      }
+
       if (mostRecentTransaction) {
         let hasMore = true;
         const options: ListTransactionsOpts = {
@@ -112,6 +134,7 @@ export const bankRouter = createTRPCRouter({
             options,
           );
 
+          const newCounterParties: InferInsertModel<typeof counterparty>[] = [];
           const newTransactions = [];
           for (const transaction of remoteTransactions) {
             const d = new Date(transaction.date);
@@ -120,27 +143,46 @@ export const bankRouter = createTRPCRouter({
               break;
             }
 
+            const cpname = transaction.details?.counterparty?.name ?? "unknown";
+            const cptype = transaction.details?.counterparty?.type ?? "unknown";
+
+            if (!counterPartyLookup[cpname]) {
+              const newCP = {
+                id: randomUUID(),
+                userId: ctx.session.user.id,
+                name: cpname,
+                type: cptype,
+              };
+
+              newCounterParties.push(newCP);
+              counterPartyLookup[cpname] = newCP;
+            }
+
             newTransactions.push(transaction);
             options.from_id = transaction.id;
           }
 
-          // insert new transactions
+          await ctx.db
+            .insert(counterparty)
+            .values(newCounterParties)
+            .onDuplicateKeyUpdate({ set: { id: sql`id` } });
+
           await ctx.db
             .insert(transactions)
             .values(
               newTransactions.map((transaction) => ({
                 id: transaction.id,
+                userId: ctx.session.user.id,
                 bankAccountId: transaction.account_id,
                 description: transaction.description,
                 amount: parseFloat(transaction.amount),
                 date: new Date(transaction.date),
                 type: transaction.type,
                 status: transaction.status,
-                category: transaction.details.category ?? "unknown",
-                counterParty:
-                  transaction.details.counterparty?.name ?? "unknown",
-                counterPartyType:
-                  transaction.details.counterparty?.type ?? "unknown",
+                counterPartyId:
+                  counterPartyLookup[
+                    transaction.details?.counterparty?.name ?? "unknown"
+                  ]?.id ?? "",
               })),
             )
             .onDuplicateKeyUpdate({ set: { id: sql`id` } });
@@ -154,19 +196,43 @@ export const bankRouter = createTRPCRouter({
           },
         );
 
+        const newCounterParties: InferInsertModel<typeof counterparty>[] = [];
+        for (const transaction of remoteTransactions) {
+          const cpname = transaction.details?.counterparty?.name ?? "unknown";
+          const cptype = transaction.details?.counterparty?.type ?? "unknown";
+
+          if (!counterPartyLookup[cpname]) {
+            const newCP = {
+              id: randomUUID(),
+              userId: ctx.session.user.id,
+              name: cpname,
+              type: cptype,
+            };
+
+            newCounterParties.push(newCP);
+            counterPartyLookup[cpname] = newCP;
+          }
+        }
+
+        await ctx.db
+          .insert(counterparty)
+          .values(newCounterParties)
+          .onDuplicateKeyUpdate({ set: { id: sql`id` } });
+
         await ctx.db.insert(transactions).values(
           remoteTransactions.map((transaction) => ({
             id: transaction.id,
+            userId: ctx.session.user.id,
             bankAccountId: transaction.account_id,
             description: transaction.description,
             amount: parseFloat(transaction.amount),
             date: new Date(transaction.date),
             type: transaction.type,
             status: transaction.status,
-            category: transaction.details.category ?? "unknown",
-            counterParty: transaction.details.counterparty?.name ?? "unknown",
-            counterPartyType:
-              transaction.details.counterparty?.type ?? "unknown",
+            counterPartyId:
+              counterPartyLookup[
+                transaction.details?.counterparty?.name ?? "unknown"
+              ]?.id ?? "",
           })),
         );
       }

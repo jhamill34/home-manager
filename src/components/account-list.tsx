@@ -62,6 +62,9 @@ function TransactionList({ accountId }: { accountId: string }) {
             {transaction.date.toLocaleDateString()} {transaction.description} -{" "}
             {transaction.amount}
           </div>
+          <div className="text-sm text-gray-400">
+            {transaction.counterparty.name}
+          </div>
         </li>
       ))}
     </ul>

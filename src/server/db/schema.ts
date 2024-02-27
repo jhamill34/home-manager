@@ -35,6 +35,7 @@ export const banksRelations = relations(banks, ({ one, many }) => ({
 
 export const bankAccounts = createTable("bank_account", {
   id: varchar("id", { length: 255 }).notNull().primaryKey(),
+  userId: varchar("userId", { length: 255 }).notNull(),
   bankId: varchar("bankId", { length: 255 }).notNull(),
   type: varchar("type", { length: 255 }).notNull(),
   name: varchar("name", { length: 255 }).notNull(),
@@ -48,28 +49,67 @@ export const bankAccountsRelations = relations(
   bankAccounts,
   ({ one, many }) => ({
     bank: one(banks, { fields: [bankAccounts.bankId], references: [banks.id] }),
+    user: one(users, { fields: [bankAccounts.userId], references: [users.id] }),
     transactions: many(transactions),
   }),
 );
 
 export const transactions = createTable("transaction", {
   id: varchar("id", { length: 255 }).notNull().primaryKey(),
+  userId: varchar("userId", { length: 255 }).notNull(),
   bankAccountId: varchar("bankAccountId", { length: 255 }).notNull(),
   description: text("description").notNull(),
   amount: real("amount").notNull(),
   date: timestamp("date", { mode: "date" }).notNull(),
   type: varchar("type", { length: 255 }).notNull(),
   status: varchar("status", { length: 255 }).notNull(),
-  category: varchar("category", { length: 255 }).notNull(),
-  counterParty: varchar("counterParty", { length: 255 }).notNull(),
-  counterPartyType: varchar("counterPartyType", { length: 255 }).notNull(),
+  counterPartyId: varchar("counterPartyId", { length: 255 }).notNull(),
+
+  note: text("note"),
 });
 
 export const transactionsRelations = relations(transactions, ({ one }) => ({
+  counterparty: one(counterparty, {
+    fields: [transactions.counterPartyId],
+    references: [counterparty.id],
+  }),
+  user: one(users, { fields: [transactions.userId], references: [users.id] }),
   bankAccount: one(bankAccounts, {
     fields: [transactions.bankAccountId],
     references: [bankAccounts.id],
   }),
+}));
+
+export const counterparty = createTable("counterparty", {
+  id: varchar("id", { length: 255 }).notNull().primaryKey(),
+  userId: varchar("userId", { length: 255 }).notNull(),
+  name: varchar("name", { length: 255 }).notNull(),
+  type: varchar("type", { length: 255 }).notNull(),
+
+  categoryId: varchar("categoryId", { length: 255 }),
+});
+
+export const counterpartyRelations = relations(
+  counterparty,
+  ({ one, many }) => ({
+    transactions: many(transactions),
+    user: one(users, { fields: [counterparty.userId], references: [users.id] }),
+    category: one(category, {
+      fields: [counterparty.categoryId],
+      references: [category.id],
+    }),
+  }),
+);
+
+export const category = createTable("category", {
+  id: int("id").notNull().primaryKey(),
+  userId: varchar("userId", { length: 255 }).notNull(),
+  name: varchar("name", { length: 255 }).notNull(),
+});
+
+export const categoryRelations = relations(category, ({ one, many }) => ({
+  counterparties: many(counterparty),
+  user: one(users, { fields: [category.userId], references: [users.id] }),
 }));
 
 export const users = createTable("user", {
@@ -85,8 +125,11 @@ export const users = createTable("user", {
 
 export const usersRelations = relations(users, ({ many }) => ({
   accounts: many(accounts),
-  sessions: many(sessions),
   bank: many(banks),
+  bankAccounts: many(bankAccounts),
+  counterparties: many(counterparty),
+  sessions: many(sessions),
+  transactions: many(transactions),
 }));
 
 export const accounts = createTable(
